@@ -29,6 +29,7 @@ class User extends Authenticatable
         'preferred_mode',
         'privacy_show_initials',
         'privacy_show_city',
+        'profile_image',
     ];
 
     /**

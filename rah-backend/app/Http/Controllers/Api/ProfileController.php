@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 
 class ProfileController extends Controller
 {
@@ -15,6 +16,11 @@ class ProfileController extends Controller
 
         $phone = (string) ($u->phone_e164 ?? '');
         $masked = $this->maskPhone($phone);
+
+        $profileImageUrl = null;
+        if ($u->profile_image) {
+            $profileImageUrl = asset('storage/' . $u->profile_image);
+        }
 
         return response()->json([
             'ok' => true,
@@ -28,6 +34,7 @@ class ProfileController extends Controller
                 'phone_masked' => $masked,
                 'phone_verified' => !is_null($u->phone_verified_at),
                 'email' => $u->email,
+                'profile_image' => $profileImageUrl,
             ],
         ]);
     }
@@ -51,6 +58,11 @@ class ProfileController extends Controller
         $phone = (string) ($u->phone_e164 ?? '');
         $masked = $this->maskPhone($phone);
 
+        $profileImageUrl = null;
+        if ($u->profile_image) {
+            $profileImageUrl = asset('storage/' . $u->profile_image);
+        }
+
         return response()->json([
             'ok' => true,
             'user' => [
@@ -63,8 +75,45 @@ class ProfileController extends Controller
                 'phone_masked' => $masked,
                 'phone_verified' => !is_null($u->phone_verified_at),
                 'email' => $u->email,
+                'profile_image' => $profileImageUrl,
             ],
         ]);
+    }
+
+    public function uploadImage(Request $request)
+    {
+        $u = Auth::user();
+        if (!$u) return response()->json(['ok' => false, 'error' => 'unauthenticated'], 401);
+
+        $request->validate([
+            'profile_image' => 'required|image|mimes:jpeg,png,jpg,gif|max:5120',
+        ]);
+
+        try {
+            // Delete old image if it exists
+            if ($u->profile_image && Storage::disk('public')->exists($u->profile_image)) {
+                Storage::disk('public')->delete($u->profile_image);
+            }
+
+            // Store new image
+            $path = $request->file('profile_image')->store('profiles', 'public');
+            
+            // Update user
+            $u->update(['profile_image' => $path]);
+
+            $profileImageUrl = asset('storage/' . $path);
+
+            return response()->json([
+                'ok' => true,
+                'profile_image' => $profileImageUrl,
+                'message' => 'Profile image uploaded successfully',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'ok' => false,
+                'error' => 'Failed to upload image: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     private function maskPhone(string $e164): string

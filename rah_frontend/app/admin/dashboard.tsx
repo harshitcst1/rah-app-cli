@@ -10,11 +10,13 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme, type ThemeColors } from "../theme";
 import { api } from "../services/api";
 import { useAuth } from "../context/auth";
+import { launchImageLibrary } from "react-native-image-picker";
 
 interface KpiData {
   total_users: number;
@@ -33,6 +35,15 @@ interface ActivityItem {
   count: number;
   created_at: string;
   user: { name: string; city: string };
+}
+
+interface AnnouncementItem {
+  id: number;
+  subject: string;
+  description: string;
+  photo_url?: string | null;
+  is_active: boolean;
+  published_at?: string;
 }
 
 interface DaroodType {
@@ -58,6 +69,7 @@ export default function AdminDashboard() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardItem[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [daroodTypes, setDaroodTypes] = useState<DaroodType[]>([]);
+  const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
   
   // Modal state
   const [modalVisible, setModalVisible] = useState(false);
@@ -69,19 +81,27 @@ export default function AdminDashboard() {
   const [typeText, setTypeText] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Announcement form state
+  const [announcementSubject, setAnnouncementSubject] = useState("");
+  const [announcementDescription, setAnnouncementDescription] = useState("");
+  const [announcementPhoto, setAnnouncementPhoto] = useState<{ uri: string; name: string; type: string } | null>(null);
+  const [announcementSaving, setAnnouncementSaving] = useState(false);
+
   const loadData = useCallback(async () => {
     try {
-      const [kpiRes, lbRes, actRes, typesRes] = await Promise.all([
+      const [kpiRes, lbRes, actRes, typesRes, announcementRes] = await Promise.all([
         api.getAdminKpis(),
         api.getAdminLeaderboard('season'),
         api.getAdminActivity(8),
         api.getAdminDaroodTypes(),
+        api.getAdminAnnouncements(),
       ]);
       
       if (kpiRes.ok) setKpis(kpiRes);
       if (lbRes.ok) setLeaderboard(lbRes.items || []);
       if (actRes.ok) setActivity(actRes.items || []);
       if (typesRes.ok) setDaroodTypes(typesRes.items || []);
+      if (announcementRes.ok) setAnnouncements(announcementRes.items || []);
     } catch (error: any) {
       if (error?.message === "Session expired. Please login again.") {
         await signOut();
@@ -141,6 +161,102 @@ export default function AdminDashboard() {
     setTypeActive(type.active);
     setTypeText("");
     setModalVisible(true);
+  };
+
+  const pickAnnouncementPhoto = async () => {
+    // Defensive: check if the imported helper is a function first.
+    let pickerFn: any = null;
+    if (typeof launchImageLibrary === 'function') {
+      pickerFn = launchImageLibrary as any;
+    } else {
+      try {
+        // Try a safe dynamic require; wrap in try/catch because some bundlers don't expose require.
+        // Avoid chaining into a null value.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const mod: any = (global as any)?.require ? (global as any).require('react-native-image-picker') : null;
+        if (mod) {
+          pickerFn = typeof mod.launchImageLibrary === 'function' ? mod.launchImageLibrary : typeof mod.default?.launchImageLibrary === 'function' ? mod.default.launchImageLibrary : null;
+        }
+      } catch (e) {
+        pickerFn = null;
+      }
+    }
+
+    if (!pickerFn) {
+      Alert.alert(
+        'Image picker not available',
+        'The native image picker module is not available. Did you install and rebuild the app? Run `npx react-native run-android` and try again.',
+      );
+      return;
+    }
+
+    try {
+      const result = await pickerFn({ mediaType: 'photo', selectionLimit: 1 });
+      if (!result || result.didCancel || result.errorCode || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      if (!asset?.uri) return;
+
+      setAnnouncementPhoto({
+        uri: asset.uri,
+        name: asset.fileName || `announcement-${Date.now()}.jpg`,
+        type: asset.type || 'image/jpeg',
+      });
+    } catch (err: any) {
+      console.warn('pickAnnouncementPhoto error', err);
+      Alert.alert('Error', err?.message || 'Failed to pick photo');
+    }
+  };
+
+  const clearAnnouncementForm = () => {
+    setAnnouncementSubject("");
+    setAnnouncementDescription("");
+    setAnnouncementPhoto(null);
+  };
+
+  const handleSaveAnnouncement = async () => {
+    if (!announcementSubject.trim() || !announcementDescription.trim()) {
+      Alert.alert("Error", "Subject and description are required");
+      return;
+    }
+
+    setAnnouncementSaving(true);
+    try {
+      await api.createAdminAnnouncement({
+        subject: announcementSubject.trim(),
+        description: announcementDescription.trim(),
+        photo: announcementPhoto,
+      });
+      clearAnnouncementForm();
+      await loadData();
+      Alert.alert("Success", "Announcement published to all users.");
+    } catch (error: any) {
+      Alert.alert("Error", error.message || "Failed to publish announcement");
+    } finally {
+      setAnnouncementSaving(false);
+    }
+  };
+
+  const handleDeleteAnnouncement = (announcement: AnnouncementItem) => {
+    Alert.alert(
+      "Delete Announcement",
+      `Delete "${announcement.subject}"? This cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await api.deleteAdminAnnouncement(announcement.id);
+              await loadData();
+            } catch (error: any) {
+              Alert.alert("Error", error.message || "Failed to delete announcement");
+            }
+          },
+        },
+      ],
+    );
   };
 
   const handleSaveType = async () => {
@@ -362,23 +478,89 @@ export default function AdminDashboard() {
         {/* Announcements */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Announcements</Text>
-            <Text style={styles.sectionNote}>Admin only</Text>
+            <View>
+              <Text style={styles.sectionTitle}>Announcements</Text>
+              <Text style={styles.sectionNote}>Publish to all users instantly</Text>
+            </View>
+            <View style={styles.announcementBadge}>
+              <Text style={styles.announcementBadgeText}>{announcements.length} total</Text>
+            </View>
           </View>
-          <View style={styles.announcementCard}>
-            <Text style={styles.announcementTitle}>Umrah Sponsorship Rules</Text>
-            <Text style={styles.announcementText}>
-              Top ranked participant by season end receives full sponsorship. Logs
-              must be genuine; audits may apply.
-            </Text>
+          <View style={styles.announcementFormCard}>
+            <Text style={styles.formSectionTitle}>Create Announcement</Text>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Subject</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={announcementSubject}
+                onChangeText={setAnnouncementSubject}
+                placeholder="Enter announcement subject"
+                placeholderTextColor={colors.textMuted}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Description</Text>
+              <TextInput
+                style={[styles.modalInput, styles.textArea, { minHeight: 110 }]}
+                value={announcementDescription}
+                onChangeText={setAnnouncementDescription}
+                placeholder="Write the announcement details"
+                placeholderTextColor={colors.textMuted}
+                multiline
+                numberOfLines={5}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Photo</Text>
+              <TouchableOpacity style={styles.photoPickerButton} onPress={pickAnnouncementPhoto}>
+                <Text style={styles.photoPickerText}>{announcementPhoto ? "Change photo" : "Select photo"}</Text>
+              </TouchableOpacity>
+              {announcementPhoto ? (
+                <View style={styles.photoPreviewWrap}>
+                  <Image source={{ uri: announcementPhoto.uri }} style={styles.photoPreview} />
+                </View>
+              ) : null}
+            </View>
+
+            <TouchableOpacity
+              style={[styles.publishButton, announcementSaving && styles.buttonDisabled]}
+              onPress={handleSaveAnnouncement}
+              disabled={announcementSaving}
+            >
+              <Text style={styles.publishButtonText}>{announcementSaving ? "Publishing..." : "Publish Announcement"}</Text>
+            </TouchableOpacity>
           </View>
-          <View style={styles.announcementCard}>
-            <Text style={styles.announcementTitle}>City Chapters</Text>
-            <Text style={styles.announcementText}>
-              We're adding city coordinators. If interested, contact
-              support@rah-e-noor.app.
-            </Text>
+
+          <View style={styles.recentAnnouncementHeader}>
+            <Text style={styles.formSectionTitle}>Recent Announcements</Text>
           </View>
+
+          {announcements.length === 0 ? (
+            <View style={styles.announcementCard}>
+              <Text style={styles.announcementText}>No announcements yet.</Text>
+            </View>
+          ) : (
+            announcements.slice(0, 5).map((announcement) => (
+              <View key={announcement.id} style={styles.announcementCard}>
+                <View style={styles.announcementRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.announcementTitle}>{announcement.subject}</Text>
+                    <Text style={styles.announcementText} numberOfLines={2}>
+                      {announcement.description}
+                    </Text>
+                  </View>
+                  <TouchableOpacity style={styles.deleteAnnouncementBtn} onPress={() => handleDeleteAnnouncement(announcement)}>
+                    <Text style={styles.deleteAnnouncementText}>Delete</Text>
+                  </TouchableOpacity>
+                </View>
+                {announcement.photo_url ? (
+                  <Image source={{ uri: announcement.photo_url }} style={styles.recentAnnouncementPhoto} />
+                ) : null}
+              </View>
+            ))
+          )}
         </View>
 
         {/* Footer */}
@@ -665,6 +847,178 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.card,
     padding: 14,
     marginBottom: 12,
+  },
+  announcementFormCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    padding: 14,
+    marginBottom: 12,
+    gap: 12,
+  announcementFormCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    padding: 14,
+    marginBottom: 12,
+    gap: 12,
+  },
+  formSectionTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.greenDeep,
+  },
+  announcementBadge: {
+    backgroundColor: colors.goldSoft,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  announcementBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: colors.greenDeep,
+  },
+  photoPickerButton: {
+    backgroundColor: colors.goldSoft,
+    borderWidth: 1,
+    borderColor: colors.gold,
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  photoPickerText: {
+    color: colors.greenDeep,
+    fontWeight: "700",
+  },
+  photoPreviewWrap: {
+    marginTop: 10,
+    borderRadius: 12,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  photoPreview: {
+    width: "100%",
+    height: 180,
+  },
+  publishButton: {
+    backgroundColor: colors.green,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  publishButtonText: {
+    color: colors.onAccent,
+    fontWeight: "800",
+  },
+  recentAnnouncementHeader: {
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  announcementRow: {
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "flex-start",
+  },
+  deleteAnnouncementBtn: {
+    backgroundColor: colors.dangerBg,
+    borderWidth: 1,
+    borderColor: colors.dangerBorder,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  deleteAnnouncementText: {
+    color: colors.danger,
+    fontWeight: "700",
+    fontSize: 12,
+  },
+  recentAnnouncementPhoto: {
+    marginTop: 10,
+    width: "100%",
+    height: 140,
+    borderRadius: 12,
+  },
+  },
+  formSectionTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.greenDeep,
+  },
+  announcementBadge: {
+    backgroundColor: colors.goldSoft,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  announcementBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: colors.greenDeep,
+  },
+  photoPickerButton: {
+    backgroundColor: colors.goldSoft,
+    borderWidth: 1,
+    borderColor: colors.gold,
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  photoPickerText: {
+    color: colors.greenDeep,
+    fontWeight: "700",
+  },
+  photoPreviewWrap: {
+    marginTop: 10,
+    borderRadius: 12,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  photoPreview: {
+    width: "100%",
+    height: 180,
+  },
+  publishButton: {
+    backgroundColor: colors.green,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  publishButtonText: {
+    color: colors.onAccent,
+    fontWeight: "800",
+  },
+  recentAnnouncementHeader: {
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  announcementRow: {
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "flex-start",
+  },
+  deleteAnnouncementBtn: {
+    backgroundColor: colors.dangerBg,
+    borderWidth: 1,
+    borderColor: colors.dangerBorder,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  deleteAnnouncementText: {
+    color: colors.danger,
+    fontWeight: "700",
+    fontSize: 12,
+  },
+  recentAnnouncementPhoto: {
+    marginTop: 10,
+    width: "100%",
+    height: 140,
+    borderRadius: 12,
   },
   announcementTitle: {
     fontSize: 13,

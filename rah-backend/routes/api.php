@@ -5,12 +5,14 @@ use App\Http\Controllers\Api\LoginController;
 use App\Http\Controllers\Api\RegistrationController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\LogsController;
+use App\Http\Controllers\Api\AnnouncementController;
 use App\Http\Controllers\Api\DaroodTypesController;
 use App\Http\Controllers\Api\LeaderboardController;
 use App\Http\Controllers\Api\StatsController;
 use App\Http\Controllers\Admin\KpiAdminController;
 use App\Http\Controllers\Admin\LeaderboardAdminController;
 use App\Http\Controllers\Admin\ActivityAdminController;
+use App\Http\Controllers\Admin\AnnouncementAdminController;
 use App\Http\Controllers\Admin\DaroodTypesAdminController;
 
 /*
@@ -54,10 +56,15 @@ Route::middleware('auth:sanctum')->group(function () {
     // Profile
     Route::get('/profile', [ProfileController::class, 'show']);
     Route::patch('/profile', [ProfileController::class, 'update']);
+    Route::post('/profile/image', [ProfileController::class, 'uploadImage']);
     
     // Darood Logs
     Route::post('/logs', [LogsController::class, 'store']);
     Route::delete('/logs/{id}', [LogsController::class, 'destroy']);
+
+    // Announcements
+    Route::get('/announcements', [AnnouncementController::class, 'index']);
+    Route::post('/announcements/{id}/read', [AnnouncementController::class, 'read']);
     
     // Darood Types (list available types)
     Route::get('/darood-types', [DaroodTypesController::class, 'index']);
@@ -84,6 +91,11 @@ Route::middleware('auth:sanctum')->group(function () {
         
         // Recent Activity
         Route::get('/activity', [ActivityAdminController::class, 'index']);
+
+        // Announcements
+        Route::get('/announcements', [AnnouncementAdminController::class, 'index']);
+        Route::post('/announcements', [AnnouncementAdminController::class, 'store']);
+        Route::delete('/announcements/{id}', [AnnouncementAdminController::class, 'destroy']);
         
         // Darood Type Management
         Route::get('/darood-types', [DaroodTypesAdminController::class, 'index']);

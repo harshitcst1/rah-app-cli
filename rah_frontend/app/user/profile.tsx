@@ -10,13 +10,17 @@ import {
   Alert,
   Modal,
   ActivityIndicator,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { CommonActions, useNavigation } from "@react-navigation/native";
+import { launchImageLibrary } from "react-native-image-picker";
 import { useTheme, type ThemeColors } from "../theme";
 import { api as apiClient } from "../services/api";
 import { Storage } from "../utils/storage";
 import { useAuth } from "../context/auth";
+import { showToast } from "../components/Toast";
+import Toast from "../components/Toast";
 
 export default function Profile() {
   const navigation = useNavigation<any>();
@@ -26,6 +30,9 @@ export default function Profile() {
   const defaultPhoneMasked = "+91 •••• ••21";
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const [profileImageUri, setProfileImageUri] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   const [name, setName] = useState("");
   const [city, setCity] = useState("");
@@ -59,6 +66,22 @@ export default function Profile() {
         setPhoneMasked(cachedUser.phone_masked ?? defaultPhoneMasked);
         setPhoneVerified(!!cachedUser.phone_verified);
       }
+
+      // Fetch fresh profile data from API to get latest profile_image
+      const profileData = await apiClient.getProfile();
+      if (profileData?.ok && profileData.user) {
+        setName(profileData.user.name ?? "");
+        setCity(profileData.user.city ?? "");
+        setDailyGoal((profileData.user.daily_goal ?? 1000).toString());
+        setPreferredMode(profileData.user.preferred_mode === "manual" ? "manual" : "tap");
+        setPrivacyInitials(!!profileData.user.privacy_show_initials);
+        setPrivacyCity(!!profileData.user.privacy_show_city);
+        setPhoneMasked(profileData.user.phone_masked ?? defaultPhoneMasked);
+        setPhoneVerified(!!profileData.user.phone_verified);
+        if (profileData.user.profile_image) {
+          setProfileImageUri(profileData.user.profile_image);
+        }
+      }
     } catch {
       // ignore; keep defaults
     } finally {
@@ -82,9 +105,9 @@ export default function Profile() {
         privacy_show_city: privacyCity,
       };
       await apiClient.updateProfile(payload);
-      Alert.alert("Saved", "Profile saved successfully.");
+      showToast("Profile saved successfully", "success");
     } catch (e: any) {
-      Alert.alert("Error", e.message || "Could not save profile. Please try again.");
+      showToast(e.message || "Could not save profile. Please try again.", "error");
     } finally {
       setSaving(false);
     }
@@ -116,10 +139,57 @@ export default function Profile() {
         }),
       );
       await signOut();
-      Alert.alert("Deleted", "Account deleted.");
+      showToast("Account deleted.", "success");
     } catch {
-      Alert.alert("Error", "Could not delete account.");
+      showToast("Could not delete account.", "error");
     }
+  }
+
+  async function pickAndUploadImage() {
+    launchImageLibrary(
+      { mediaType: "photo", quality: 0.7, maxWidth: 600, maxHeight: 600 },
+      async (response) => {
+        if (response.didCancel || response.errorCode || !response.assets?.[0]) return;
+        
+        const asset = response.assets[0];
+        if (!asset.uri) return;
+
+        setUploadingImage(true);
+        try {
+          const formData = new FormData();
+          const filename = asset.fileName || `profile_${Date.now()}.jpg`;
+          formData.append("profile_image", {
+            uri: asset.uri,
+            type: asset.type || "image/jpeg",
+            name: filename,
+          } as any);
+
+          const result = await apiClient.request<{ ok: boolean; profile_image?: string }>(
+            "/profile/image",
+            {
+              method: "POST",
+              body: formData,
+            }
+          );
+
+          if (result.ok && result.profile_image) {
+            setProfileImageUri(result.profile_image);
+            showToast("Profile image updated!", "success");
+            // Refresh profile to get updated data
+            const profileData = await apiClient.getProfile();
+            if (profileData?.ok && profileData.user?.profile_image) {
+              setProfileImageUri(profileData.user.profile_image);
+            }
+          } else {
+            showToast("Could not upload image", "error");
+          }
+        } catch (error: any) {
+          showToast(error.message || "Could not upload image", "error");
+        } finally {
+          setUploadingImage(false);
+        }
+      }
+    );
   }
 
   if (loading) {
@@ -136,8 +206,25 @@ export default function Profile() {
     <SafeAreaView style={styles.screen}>
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.header}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{(name || "").trim().charAt(0).toUpperCase() || "U"}</Text>
+          <View style={styles.avatarWrapper}>
+            {profileImageUri ? (
+              <Image source={{ uri: profileImageUri }} style={styles.profileImage} />
+            ) : (
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{(name || "").trim().charAt(0).toUpperCase() || "U"}</Text>
+              </View>
+            )}
+            <TouchableOpacity 
+              style={styles.uploadBtn} 
+              onPress={pickAndUploadImage}
+              disabled={uploadingImage}
+            >
+              {uploadingImage ? (
+                <ActivityIndicator size="small" color={colors.onAccent} />
+              ) : (
+                <Text style={styles.uploadBtnIcon}>📷</Text>
+              )}
+            </TouchableOpacity>
           </View>
           <Text style={styles.name}>{name || "User"}</Text>
           <Text style={styles.email}>{phoneMasked}</Text>
@@ -306,6 +393,7 @@ export default function Profile() {
           </View>
         </View>
       </Modal>
+      <Toast />
     </SafeAreaView>
   );
 }
@@ -313,67 +401,71 @@ export default function Profile() {
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg },
-  container: { padding: 20, paddingBottom: 40 },
-  header: { alignItems: "center", marginBottom: 18 },
-  avatar: { width: 72, height: 72, borderRadius: 18, backgroundColor: colors.greenTint, borderWidth: 1, borderColor: colors.borderLight, alignItems: "center", justifyContent: "center", marginBottom: 8 },
-  avatarText: { color: colors.green, fontSize: 28, fontWeight: "800" },
-  name: { fontSize: 20, fontWeight: "800", color: colors.text },
-  email: { fontSize: 13, color: colors.green, marginTop: 4 },
+  container: { padding: 16, paddingBottom: 50 },
+  header: { alignItems: "center", marginBottom: 24, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: colors.borderLight },
+  avatarWrapper: { position: "relative", marginBottom: 12 },
+  avatar: { width: 80, height: 80, borderRadius: 20, backgroundColor: colors.greenTint, borderWidth: 2, borderColor: colors.green, alignItems: "center", justifyContent: "center", marginBottom: 0 },
+  profileImage: { width: 80, height: 80, borderRadius: 20, borderWidth: 2, borderColor: colors.green },
+  uploadBtn: { position: "absolute", bottom: -2, right: -2, width: 32, height: 32, borderRadius: 16, backgroundColor: colors.green, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: colors.card },
+  uploadBtnIcon: { fontSize: 16 },
+  avatarText: { color: colors.green, fontSize: 32, fontWeight: "800" },
+  name: { fontSize: 22, fontWeight: "800", color: colors.text },
+  email: { fontSize: 13, color: colors.textMuted, marginTop: 6 },
 
-  section: { marginBottom: 18 },
-  sectionTitle: { fontSize: 16, fontWeight: "700", color: colors.text, marginBottom: 8 },
+  section: { marginBottom: 22 },
+  sectionTitle: { fontSize: 15, fontWeight: "700", color: colors.text, marginBottom: 10, letterSpacing: 0.3 },
 
-  card: { backgroundColor: colors.card, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: colors.border },
-  cardLite: { backgroundColor: colors.card, borderRadius: 14, padding: 12, borderWidth: 1, borderColor: colors.borderLight },
+  card: { backgroundColor: colors.card, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: colors.border },
+  cardLite: { backgroundColor: colors.card, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: colors.borderLight },
 
-  label: { fontSize: 13, fontWeight: "600", color: colors.green, marginBottom: 6 },
-  input: { backgroundColor: colors.inputBg, borderWidth: 1, borderColor: colors.borderLight, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14, color: colors.text },
+  label: { fontSize: 12, fontWeight: "600", color: colors.green, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 },
+  input: { backgroundColor: colors.inputBg, borderWidth: 1, borderColor: colors.borderLight, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12, fontSize: 15, color: colors.text },
 
-  rowTwo: { flexDirection: "row", gap: 8, marginTop: 8 },
-  modeBtn: { flex: 1, borderRadius: 10, borderWidth: 1, borderColor: colors.borderLight, padding: 10, alignItems: "center", backgroundColor: colors.card },
-  modeBtnActive: { backgroundColor: colors.goldSoft, borderColor: colors.gold },
-  modeText: { color: colors.green, fontWeight: "600" },
-  modeTextActive: { color: colors.text },
+  rowTwo: { flexDirection: "row", gap: 10, marginTop: 10 },
+  modeBtn: { flex: 1, borderRadius: 12, borderWidth: 1.5, borderColor: colors.borderLight, padding: 12, alignItems: "center", backgroundColor: colors.card },
+  modeBtnActive: { backgroundColor: colors.goldSoft, borderColor: colors.gold, borderWidth: 2 },
+  modeText: { color: colors.textMuted, fontWeight: "600", fontSize: 14 },
+  modeTextActive: { color: colors.text, fontWeight: "700" },
 
-  saveBtn: { marginTop: 14, backgroundColor: colors.green, paddingVertical: 12, borderRadius: 10, alignItems: "center" },
-  saveBtnText: { color: colors.onAccent, fontWeight: "700" },
+  saveBtn: { marginTop: 16, backgroundColor: colors.green, paddingVertical: 14, borderRadius: 12, alignItems: "center" },
+  saveBtnText: { color: colors.onAccent, fontWeight: "700", fontSize: 15 },
 
-  notifyRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 10 },
-  notifyTitle: { fontSize: 14, fontWeight: "600", color: colors.green },
-  notifySub: { fontSize: 12, color: colors.textMuted },
+  notifyRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.borderLight },
+  notifyTitle: { fontSize: 14, fontWeight: "600", color: colors.text },
+  notifySub: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
 
-  infoRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8 },
-  infoLabel: { fontSize: 14, fontWeight: "600", color: colors.green },
-  infoValue: { fontSize: 14, color: colors.greenDeep },
+  infoRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.borderLight },
+  infoLabel: { fontSize: 14, fontWeight: "600", color: colors.text },
+  infoValue: { fontSize: 14, fontWeight: "600", color: colors.green },
 
-  chip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 14, fontSize: 12, backgroundColor: colors.card },
-  chipVerified: { backgroundColor: colors.card },
+  chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, fontSize: 12, fontWeight: "600", backgroundColor: colors.greenTint, color: colors.green },
+  chipVerified: { backgroundColor: colors.greenTint, color: colors.green },
   chipUnverified: { backgroundColor: colors.dangerBg, color: colors.danger },
 
-  accountBtns: { flexDirection: "row", marginTop: 12, gap: 8 },
-  outlineBtn: { flex: 1, borderRadius: 10, borderWidth: 1, borderColor: colors.borderLight, paddingVertical: 10, alignItems: "center", backgroundColor: colors.card },
-  outlineBtnText: { color: colors.green, fontWeight: "600" },
-  dangerBtn: { flex: 1, borderRadius: 10, paddingVertical: 10, alignItems: "center", backgroundColor: colors.dangerBg, borderWidth: 1, borderColor: colors.dangerBorder },
-  dangerBtnText: { color: colors.danger, fontWeight: "700" },
+  accountBtns: { flexDirection: "row", marginTop: 16, gap: 10 },
+  outlineBtn: { flex: 1, borderRadius: 12, borderWidth: 1.5, borderColor: colors.borderLight, paddingVertical: 12, alignItems: "center", backgroundColor: colors.card },
+  outlineBtnText: { color: colors.green, fontWeight: "700", fontSize: 14 },
+  dangerBtn: { flex: 1, borderRadius: 12, paddingVertical: 12, alignItems: "center", backgroundColor: colors.dangerBg, borderWidth: 1.5, borderColor: colors.danger },
+  dangerBtnText: { color: colors.danger, fontWeight: "700", fontSize: 14 },
 
-  pledge: { marginTop: 10, backgroundColor: colors.card, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: colors.border },
-  pledgeTitle: { fontSize: 14, fontWeight: "700", color: colors.text },
-  pledgeSub: { fontSize: 12, color: colors.textMuted, marginTop: 6 },
+  pledge: { marginTop: 20, backgroundColor: colors.goldTint, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: colors.gold },
+  pledgeTitle: { fontSize: 14, fontWeight: "800", color: colors.text },
+  pledgeSub: { fontSize: 12, color: colors.textMuted, marginTop: 6, lineHeight: 18 },
 
-  modalBackdrop: { flex: 1, backgroundColor: colors.overlay, justifyContent: "center", alignItems: "center", padding: 20 },
-  modalCard: { width: "100%", maxWidth: 420, backgroundColor: colors.card, borderRadius: 14, padding: 18, borderWidth: 1, borderColor: colors.border },
-  modalTitle: { fontSize: 16, fontWeight: "800", color: colors.text },
-  modalSub: { fontSize: 13, color: colors.textMuted, marginTop: 6 },
-  modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 8, marginTop: 14 },
-  modalCancel: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.borderLight },
-  modalCancelText: { color: colors.green, fontWeight: "700" },
-  modalConfirm: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, backgroundColor: colors.green, alignItems: "center" },
-  modalConfirmText: { color: colors.onAccent, fontWeight: "800" },
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center", padding: 20 },
+  modalCard: { width: "100%", maxWidth: 420, backgroundColor: colors.card, borderRadius: 16, padding: 20, borderWidth: 1, borderColor: colors.border },
+  modalTitle: { fontSize: 18, fontWeight: "800", color: colors.text },
+  modalSub: { fontSize: 13, color: colors.textMuted, marginTop: 8, lineHeight: 18 },
+  modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: 20 },
+  modalCancel: { paddingHorizontal: 16, paddingVertical: 12, borderRadius: 10, backgroundColor: colors.card, borderWidth: 1.5, borderColor: colors.borderLight },
+  modalCancelText: { color: colors.green, fontWeight: "700", fontSize: 14 },
+  modalConfirm: { paddingHorizontal: 16, paddingVertical: 12, borderRadius: 10, backgroundColor: colors.green, alignItems: "center" },
+  modalConfirmText: { color: colors.onAccent, fontWeight: "800", fontSize: 14 },
 
   themeBtnRow: { flexDirection: "row", gap: 10 },
-  themeBtn: { flex: 1, alignItems: "center", paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.borderLight, backgroundColor: colors.card },
-  themeBtnActive: { borderColor: colors.gold, backgroundColor: colors.goldTint },
-  themeBtnIcon: { fontSize: 22, marginBottom: 4 },
+  themeBtn: { flex: 1, alignItems: "center", paddingVertical: 14, borderRadius: 14, borderWidth: 1.5, borderColor: colors.borderLight, backgroundColor: colors.card },
+  themeBtnActive: { borderColor: colors.gold, borderWidth: 2, backgroundColor: colors.goldTint },
+  themeBtnIcon: { fontSize: 24, marginBottom: 6 },
   themeBtnLabel: { fontSize: 12, fontWeight: "600", color: colors.textMuted },
   themeBtnLabelActive: { color: colors.text, fontWeight: "700" },
 });

@@ -151,4 +151,25 @@ class DaroodTypesAdminController extends Controller
             ],
         ]);
     }
+
+    public function destroy(int $id)
+    {
+        $u = Auth::user();
+        if (!$u || !($u->is_admin ?? false)) {
+            return response()->json(['ok' => false, 'error' => 'forbidden'], 403);
+        }
+
+        $t = DaroodType::find($id);
+        if (!$t) {
+            return response()->json(['ok' => false, 'error' => 'not_found'], 404);
+        }
+
+        if ($t->image_path) {
+            Storage::disk('public')->delete($t->image_path);
+        }
+
+        $t->delete();
+
+        return response()->json(['ok' => true]);
+    }
 }

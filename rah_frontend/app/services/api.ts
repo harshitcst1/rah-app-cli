@@ -20,12 +20,16 @@ class ApiClient {
   async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const isPublicEndpoint = this.publicEndpoints.includes(endpoint);
     const token = isPublicEndpoint ? null : await Storage.getToken();
+    const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
 
     const headers: Record<string, string> = {
       'Accept': 'application/json',
-      'Content-Type': 'application/json',
       ...(options.headers as Record<string, string> || {}),
     };
+
+    if (!isFormData) {
+      headers['Content-Type'] = headers['Content-Type'] || 'application/json';
+    }
 
     if (token) {
       headers.Authorization = `Bearer ${token}`;
@@ -404,6 +408,69 @@ class ApiClient {
 
   async deleteAdminDaroodType(id: number) {
     return this.request<{ ok: boolean }>(`/admin/darood-types/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // ========================================================================
+  // ANNOUNCEMENTS
+  // ========================================================================
+
+  async getAnnouncements() {
+    return this.request<{
+      ok: boolean;
+      unread_count: number;
+      items: Array<{
+        id: number;
+        subject: string;
+        description: string;
+        photo_url?: string | null;
+        is_read: boolean;
+        published_at?: string;
+      }>;
+    }>('/announcements');
+  }
+
+  async markAnnouncementRead(id: number) {
+    return this.request<{ ok: boolean }>(`/announcements/${id}/read`, {
+      method: 'POST',
+    });
+  }
+
+  async getAdminAnnouncements() {
+    return this.request<{
+      ok: boolean;
+      items: Array<{
+        id: number;
+        subject: string;
+        description: string;
+        photo_url?: string | null;
+        is_active: boolean;
+        published_at?: string;
+      }>;
+    }>('/admin/announcements');
+  }
+
+  async createAdminAnnouncement(data: {
+    subject: string;
+    description: string;
+    photo?: { uri: string; name: string; type: string } | null;
+  }) {
+    const formData = new FormData();
+    formData.append('subject', data.subject);
+    formData.append('description', data.description);
+    if (data.photo) {
+      formData.append('photo', data.photo as any);
+    }
+
+    return this.request<{ ok: boolean; item: any }>('/admin/announcements', {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  async deleteAdminAnnouncement(id: number) {
+    return this.request<{ ok: boolean }>(`/admin/announcements/${id}`, {
       method: 'DELETE',
     });
   }

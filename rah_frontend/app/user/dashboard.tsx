@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
+  Image,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -19,9 +21,20 @@ import { Storage } from "../utils/storage";
 import { useAuth } from "../context/auth";
 import { on } from "../utils/pubsub";
 import { useIsFocused } from "@react-navigation/native";
+import { showToast } from "../components/Toast";
+import Toast from "../components/Toast";
 
 type LastLog = { id?: string; count?: number; at?: string } | null;
 type WeekSeriesItem = { total: number };
+
+type AnnouncementItem = {
+  id: number;
+  subject: string;
+  description: string;
+  photo_url?: string | null;
+  is_read: boolean;
+  published_at?: string;
+};
 
 export default function UserDashboard() {
   const { colors } = useTheme();
@@ -45,6 +58,14 @@ export default function UserDashboard() {
   const [lbYour, setLbYour] = useState<any | null>(null);
   const [lbLoading, setLbLoading] = useState(false);
   const [lbScope, setLbScope] = useState<"city" | "global">("city");
+
+  const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
+  const [announcementLoading, setAnnouncementLoading] = useState(false);
+  const [announcementUnreadCount, setAnnouncementUnreadCount] = useState(0);
+  const [selectedAnnouncement, setSelectedAnnouncement] = useState<AnnouncementItem | null>(null);
+  const [announcementModalVisible, setAnnouncementModalVisible] = useState(false);
+  const [photoModalVisible, setPhotoModalVisible] = useState(false);
+  const [allAnnouncementsVisible, setAllAnnouncementsVisible] = useState(false);
 
   const [logInput, setLogInput] = useState<string>("");
   const [undoing, setUndoing] = useState(false);
@@ -115,15 +136,31 @@ export default function UserDashboard() {
     }
   }, [lbScope]);
 
+  const loadAnnouncements = useCallback(async () => {
+    setAnnouncementLoading(true);
+    try {
+      const data = await api.getAnnouncements();
+      if (data?.ok) {
+        setAnnouncements(Array.isArray(data.items) ? data.items : []);
+        setAnnouncementUnreadCount(data.unread_count ?? 0);
+      }
+    } catch (error) {
+      console.warn("announcement load error", error);
+    } finally {
+      setAnnouncementLoading(false);
+    }
+  }, []);
+
   const loadData = useCallback(async () => {
     await Promise.all([
       loadProfileSummary(),
       loadStreak(),
       loadStats(),
       loadSeason(),
+      loadAnnouncements(),
     ]);
     await loadLeaderboardPreview();
-  }, [loadLeaderboardPreview, loadProfileSummary, loadSeason, loadStats, loadStreak]);
+  }, [loadAnnouncements, loadLeaderboardPreview, loadProfileSummary, loadSeason, loadStats, loadStreak]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -147,7 +184,7 @@ export default function UserDashboard() {
       await Promise.all([loadStats(), loadStreak(), loadLeaderboardPreview()]);
     });
     return () => { unsub(); };
-  }, [authUser, loadData, loadLeaderboardPreview, loadStats, loadStreak]);
+  }, [authUser, loadAnnouncements, loadData, loadLeaderboardPreview, loadStats, loadStreak]);
 
   function relTime(iso?: string) {
     if (!iso) return "";
@@ -181,7 +218,7 @@ export default function UserDashboard() {
             await loadStreak();
           } catch (e: any) {
             console.warn("undo error", e);
-            Alert.alert("Error", e.message || "Could not undo. Please try again.");
+            showToast(e.message || "Could not undo. Please try again.", "error");
           } finally {
             setUndoing(false);
           }
@@ -189,6 +226,23 @@ export default function UserDashboard() {
       },
     ]);
   }
+
+  const openAnnouncement = async (announcement: AnnouncementItem) => {
+    setSelectedAnnouncement(announcement);
+    setAnnouncementModalVisible(true);
+
+    if (!announcement.is_read) {
+      setAnnouncements((prev) =>
+        prev.map((item) => (item.id === announcement.id ? { ...item, is_read: true } : item)),
+      );
+      setAnnouncementUnreadCount((count) => Math.max(0, count - 1));
+      try {
+        await api.markAnnouncementRead(announcement.id);
+      } catch (error) {
+        console.warn("mark announcement read error", error);
+      }
+    }
+  };
 
   
 
@@ -201,7 +255,7 @@ export default function UserDashboard() {
       setLogInput("");
       await Promise.all([loadStats(), loadStreak(), loadLeaderboardPreview()]);
     } catch (e: any) {
-      Alert.alert("Error", e.message || "Failed to log");
+      showToast(e.message || "Failed to log", "error");
     }
   }
 
@@ -268,6 +322,74 @@ export default function UserDashboard() {
         </View>
 
         <View style={styles.card}>
+          <View style={styles.rowBetween}>
+            <View>
+              <Text style={styles.sectionTitle}>Announcements</Text>
+              <Text style={styles.smallMuted}>Admin updates for everyone</Text>
+            </View>
+            <View style={styles.announcementBadge}>
+              <Text style={styles.announcementBadgeText}>{announcementUnreadCount} unread</Text>
+            </View>
+          </View>
+
+          {announcementLoading ? (
+            <View style={styles.announcementLoadingRow}>
+              <ActivityIndicator size="small" color={colors.green} />
+              <Text style={styles.smallMuted}>Loading announcements...</Text>
+            </View>
+          ) : announcements.length === 0 ? (
+            <View style={styles.announcementEmptyCard}>
+              <Text style={styles.smallMuted}>No announcements yet.</Text>
+            </View>
+          ) : (
+            <View style={styles.announcementList}>
+              {announcements.slice(0, 3).map((announcement) => (
+                <TouchableOpacity
+                  key={announcement.id}
+                  style={[styles.announcementItem, !announcement.is_read && styles.announcementItemUnread]}
+                  onPress={() => openAnnouncement(announcement)}
+                  activeOpacity={0.85}
+                >
+                  <View style={styles.announcementItemTop}>
+                    <View style={{ flex: 1 }}>
+                      {!announcement.is_read ? (
+                        <View style={styles.newAnnouncementBadge}>
+                          <Text style={styles.newAnnouncementBadgeText}>NEW</Text>
+                        </View>
+                      ) : null}
+                      <Text style={styles.announcementItemTitle} numberOfLines={1}>
+                        {announcement.subject}
+                      </Text>
+                      <Text style={styles.announcementItemText} numberOfLines={2}>
+                        {announcement.description}
+                      </Text>
+                    </View>
+                    {announcement.photo_url ? (
+                      <Image source={{ uri: announcement.photo_url }} style={styles.announcementThumb} />
+                    ) : null}
+                  </View>
+                  <View style={styles.announcementItemBottom}>
+                    <Text style={styles.smallMuted}>
+                      {announcement.published_at ? relTime(announcement.published_at) : "Just now"}
+                    </Text>
+                    {!announcement.is_read ? <View style={styles.unreadDot} /> : null}
+                  </View>
+                </TouchableOpacity>
+              ))}
+              {announcements.length > 3 ? (
+                <TouchableOpacity
+                  style={styles.readMoreButton}
+                  onPress={() => setAllAnnouncementsVisible(true)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.readMoreButtonText}>Read more</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          )}
+        </View>
+
+        <View style={styles.card}>
           <Text style={styles.sectionTitle}>Log your darood today</Text>
           <Text style={styles.smallMuted}>Be honest. Log only what you recite.</Text>
 
@@ -300,14 +422,33 @@ export default function UserDashboard() {
             <Text style={styles.smallMuted}>Sun — Sat</Text>
           </View>
           <View style={styles.weekRow}>
-            {weekNodes.map((v, i) => (
-              <View key={i} style={styles.weekCol}>
-                <Text style={styles.weekLabel}>{['S','M','T','W','T','F','S'][i]}</Text>
-                <View style={[styles.weekDot, { backgroundColor: '#EBD9A9' }]}>
-                  <Text style={styles.weekValue}>{v}</Text>
+            {weekNodes.map((v, i) => {
+              const todayIndex = new Date().getDay();
+              const isToday = i === todayIndex;
+              const isCompletedToday = isToday && todayTotal > 0;
+              const isMissingToday = isToday && todayTotal <= 0;
+
+              return (
+                <View key={i} style={styles.weekCol}>
+                  <Text style={styles.weekLabel}>{['S','M','T','W','T','F','S'][i]}</Text>
+                  <View
+                    style={[
+                      styles.weekDot,
+                      isCompletedToday && styles.weekDotCompleted,
+                      isMissingToday && styles.weekDotMissing,
+                    ]}
+                  >
+                    {isCompletedToday ? (
+                      <Text style={styles.weekMark}>✓</Text>
+                    ) : isMissingToday ? (
+                      <Text style={styles.weekMark}>✕</Text>
+                    ) : (
+                      <Text style={styles.weekValue}>{v}</Text>
+                    )}
+                  </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
           </View>
         </View>
 
@@ -338,7 +479,9 @@ export default function UserDashboard() {
               lbItems.slice(0,3).map((r, idx) => (
                 <View key={idx} style={styles.rankItem}>
                   <View style={styles.rankLeftSmall}>
-                    <Text style={styles.rankNum}>{r.rank}</Text>
+                    <View style={styles.rankNumCircle}>
+                      <Text style={styles.rankNum}>{r.rank}</Text>
+                    </View>
                     <View>
                       <Text style={styles.rankName}>{r.user?.name ?? 'User'}</Text>
                       {r.user?.city ? <Text style={styles.smallMuted}>{r.user.city}</Text> : null}
@@ -353,7 +496,9 @@ export default function UserDashboard() {
           {lbYour ? (
             <View style={styles.yourBlock}>
               <View style={styles.rankLeftSmall}>
-                <Text style={styles.rankNum}>{lbYour.rank}</Text>
+                <View style={styles.rankNumCircle}>
+                  <Text style={styles.rankNum}>{lbYour.rank}</Text>
+                </View>
                 <View>
                   <Text style={styles.rankName}>{lbYour.user?.name ?? 'You'}</Text>
                   {lbYour.user?.city ? <Text style={styles.smallMuted}>{lbYour.user.city}</Text> : null}
@@ -390,6 +535,92 @@ export default function UserDashboard() {
         </View>
 
       </ScrollView>
+
+      <Modal visible={announcementModalVisible} transparent animationType="fade" onRequestClose={() => setAnnouncementModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.announcementModalCard}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.announcementModalTitle}>{selectedAnnouncement?.subject}</Text>
+              {selectedAnnouncement?.photo_url ? (
+                <TouchableOpacity onPress={() => setPhotoModalVisible(true)} activeOpacity={0.9}>
+                  <Image source={{ uri: selectedAnnouncement.photo_url }} style={styles.announcementModalImage} />
+                </TouchableOpacity>
+              ) : null}
+              <Text style={styles.announcementModalText}>{selectedAnnouncement?.description}</Text>
+            </ScrollView>
+            <TouchableOpacity style={styles.announcementModalClose} onPress={() => setAnnouncementModalVisible(false)}>
+              <Text style={styles.announcementModalCloseText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={photoModalVisible} transparent animationType="fade" onRequestClose={() => setPhotoModalVisible(false)}>
+        <View style={styles.photoModalBackdrop}>
+          <TouchableOpacity style={styles.photoModalCloseArea} onPress={() => setPhotoModalVisible(false)} activeOpacity={1}>
+            {selectedAnnouncement?.photo_url ? (
+              <Image source={{ uri: selectedAnnouncement.photo_url }} style={styles.photoModalImage} resizeMode="contain" />
+            ) : null}
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
+      <Modal visible={allAnnouncementsVisible} transparent animationType="fade" onRequestClose={() => setAllAnnouncementsVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.allAnnouncementsModalCard}>
+            <View style={styles.rowBetween}>
+              <Text style={styles.announcementModalTitle}>All Announcements</Text>
+              <TouchableOpacity onPress={() => setAllAnnouncementsVisible(false)}>
+                <Text style={styles.announcementModalCloseText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ marginTop: 4 }}>
+              {announcements.length === 0 ? (
+                <Text style={styles.smallMuted}>No announcements yet.</Text>
+              ) : (
+                announcements.map((announcement) => (
+                  <TouchableOpacity
+                    key={announcement.id}
+                    style={[styles.announcementItem, !announcement.is_read && styles.announcementItemUnread]}
+                    onPress={() => {
+                      setAllAnnouncementsVisible(false);
+                      openAnnouncement(announcement);
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <View style={styles.announcementItemTop}>
+                      <View style={{ flex: 1 }}>
+                        {!announcement.is_read ? (
+                          <View style={styles.newAnnouncementBadge}>
+                            <Text style={styles.newAnnouncementBadgeText}>NEW</Text>
+                          </View>
+                        ) : null}
+                        <Text style={styles.announcementItemTitle} numberOfLines={1}>
+                          {announcement.subject}
+                        </Text>
+                        <Text style={styles.announcementItemText} numberOfLines={2}>
+                          {announcement.description}
+                        </Text>
+                      </View>
+                      {announcement.photo_url ? (
+                        <Image source={{ uri: announcement.photo_url }} style={styles.announcementThumb} />
+                      ) : null}
+                    </View>
+                    <View style={styles.announcementItemBottom}>
+                      <Text style={styles.smallMuted}>
+                        {announcement.published_at ? relTime(announcement.published_at) : "Just now"}
+                      </Text>
+                      {!announcement.is_read ? <View style={styles.unreadDot} /> : null}
+                    </View>
+                  </TouchableOpacity>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Toast />
     </SafeAreaView>
   );
 }
@@ -423,19 +654,115 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   weekRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 },
   weekCol: { alignItems: 'center' },
   weekLabel: { fontSize: 10, color: colors.textMuted },
-  weekDot: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.borderLight },
+  weekDot: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.borderLight, backgroundColor: '#EBD9A9' },
+  weekDotCompleted: { backgroundColor: colors.green, borderColor: colors.green },
+  weekDotMissing: { backgroundColor: '#FDE8E8', borderColor: '#EF4444', borderStyle: 'dashed' },
   weekValue: { fontSize: 11, color: colors.text },
+  weekMark: { fontSize: 12, fontWeight: '800', color: colors.onAccent },
+  announcementBadge: { backgroundColor: colors.goldSoft || '#FFF5E5', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
+  announcementBadgeText: { fontSize: 11, fontWeight: '700', color: colors.green },
+  announcementLoadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 },
+  announcementEmptyCard: { paddingVertical: 8 },
+  announcementList: { marginTop: 8 },
+  announcementItem: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.borderLight },
+  announcementItemUnread: {
+    backgroundColor: colors.greenTint || '#F1FBF4',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.green,
+    paddingHorizontal: 10,
+    paddingTop: 10,
+    marginBottom: 8,
+  },
+  announcementItemTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  announcementItemTitle: { fontWeight: '700', color: colors.text },
+  announcementItemText: { color: colors.text, marginTop: 4 },
+  announcementThumb: { width: 60, height: 48, borderRadius: 8 },
+  announcementItemBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
+  unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.green, marginLeft: 8 },
+  readMoreButton: {
+    marginTop: 10,
+    alignSelf: 'center',
+    backgroundColor: colors.green,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  readMoreButtonText: {
+    color: colors.onAccent,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  newAnnouncementBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.green,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginBottom: 6,
+  },
+  newAnnouncementBadgeText: {
+    color: colors.onAccent,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 },
+  announcementModalCard: { backgroundColor: colors.card, borderRadius: 12, padding: 16, maxHeight: '80%' },
+  allAnnouncementsModalCard: { backgroundColor: colors.card, borderRadius: 12, padding: 16, maxHeight: '85%' },
+  announcementModalTitle: { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 10 },
+  announcementModalImage: { width: '100%', height: 200, borderRadius: 10, marginBottom: 12 },
+  announcementModalText: { color: colors.text, lineHeight: 20 },
+  announcementModalClose: { marginTop: 12, alignSelf: 'flex-end', paddingHorizontal: 12, paddingVertical: 8 },
+  announcementModalCloseText: { color: colors.green, fontWeight: '700' },
+  photoModalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center' },
+  photoModalCloseArea: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
+  photoModalImage: { width: '100%', height: '100%' },
   inlineTabs: { flexDirection: 'row', marginTop: 12, gap: 8 },
   tabPill: { backgroundColor: colors.card, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: colors.borderLight },
   tabActivePill: { backgroundColor: colors.green, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
   tabText: { color: colors.text },
   tabActiveText: { color: colors.onAccent, fontWeight: '700' },
-  rankItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderTopWidth: 1, borderTopColor: colors.separator },
-  rankLeftSmall: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  rankNum: { width: 28, fontWeight: '700' },
-  rankName: { fontWeight: '700', color: colors.text },
-  rankTotal: { fontWeight: '700', color: colors.text },
-  yourBlock: { marginTop: 12, borderRadius: 8, padding: 10, backgroundColor: colors.goldTint, borderWidth: 1, borderColor: colors.borderLight },
+  rankItem: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    paddingVertical: 12, 
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    borderRadius: 10,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  rankLeftSmall: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  rankNumCircle: { 
+    width: 36, 
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.greenTint,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.green,
+  },
+  rankNum: { 
+    fontWeight: '800', 
+    fontSize: 14,
+    color: colors.green,
+  },
+  rankName: { fontWeight: '700', color: colors.text, fontSize: 14 },
+  rankTotal: { fontWeight: '700', color: colors.green, fontSize: 16 },
+  yourBlock: { 
+    marginTop: 12, 
+    borderRadius: 10, 
+    padding: 14,
+    paddingHorizontal: 14,
+    backgroundColor: colors.goldTint, 
+    borderWidth: 2, 
+    borderColor: colors.gold,
+  },
   toggleStatic: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   toggleInner: { width: 32, height: 18, borderRadius: 9, backgroundColor: colors.gold },
 });
