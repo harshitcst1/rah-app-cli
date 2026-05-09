@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const TOKEN_KEY = '@rah_auth_token';
 const USER_KEY = '@rah_user';
+const API_BASE_URL_KEY = '@rah_api_base_url';
 
 export const Storage = {
   // Token management
@@ -42,6 +43,19 @@ export const Storage = {
       AsyncStorage.removeItem(TOKEN_KEY),
       AsyncStorage.removeItem(USER_KEY),
     ]);
+  },
+
+  // API host cache
+  async saveApiBaseUrl(baseUrl: string) {
+    await AsyncStorage.setItem(API_BASE_URL_KEY, baseUrl);
+  },
+
+  async getApiBaseUrl(): Promise<string | null> {
+    return await AsyncStorage.getItem(API_BASE_URL_KEY);
+  },
+
+  async removeApiBaseUrl() {
+    await AsyncStorage.removeItem(API_BASE_URL_KEY);
   },
 };
 

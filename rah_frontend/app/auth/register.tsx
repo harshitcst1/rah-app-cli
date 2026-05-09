@@ -75,7 +75,7 @@ export default function Register() {
     }
     setLoading(true);
     try {
-      const data = await api.registerStart({ name, phone, password, city: city || undefined });
+      const data = await api.registerStart({ name, email: email || undefined, phone, password, city: city || undefined });
       if (data.ok && data.registration_id) {
         setRegistrationId(data.registration_id);
         setMaskedPhone(phone.replace(/\d(?=\d{4})/g, '•'));

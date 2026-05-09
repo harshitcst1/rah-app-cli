@@ -5,5 +5,5 @@ export const API_CONFIG = {
     "http://localhost:8000/api",
     "http://192.168.1.112:8000/api",
   ],
-  timeout: 10000,
+  timeout: 20000,
 };

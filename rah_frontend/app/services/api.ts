@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import { API_CONFIG } from '../config/api';
 import { Storage } from '../utils/storage';
 
@@ -67,32 +68,48 @@ class ApiClient {
     options: RequestInit,
     headers: Record<string, string>
   ) {
-    const candidateURLs = this.resolvedBaseURL
-      ? [this.resolvedBaseURL, ...this.baseURLs.filter((url) => url !== this.resolvedBaseURL)]
-      : this.baseURLs;
+    const cachedBaseURL = await Storage.getApiBaseUrl().catch(() => null);
+    const platformBaseURLs = this.getPlatformBaseURLs();
+    const preferredBaseURL = [this.resolvedBaseURL, cachedBaseURL].find(
+      (url): url is string => !!url && platformBaseURLs.includes(url)
+    );
+    const candidateURLs = preferredBaseURL
+      ? [preferredBaseURL, ...platformBaseURLs.filter((url) => url !== preferredBaseURL)]
+      : platformBaseURLs;
+
+    console.log(`[API] Platform: ${Platform.OS}, Candidates:`, candidateURLs);
+    console.log(`[API] Cached: ${cachedBaseURL}, Preferred: ${preferredBaseURL}`);
 
     let lastError: unknown = null;
 
     for (const baseURL of candidateURLs) {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), this.requestTimeout);
+      const timeoutId = setTimeout(() => {
+        console.warn(`[API] Timeout (${this.requestTimeout}ms) on ${baseURL}${endpoint}`);
+        controller.abort();
+      }, this.requestTimeout);
 
       try {
+        console.log(`[API] Trying ${baseURL}${endpoint}...`);
         const response = await fetch(`${baseURL}${endpoint}`, {
           ...options,
           headers,
           signal: controller.signal,
         });
 
+        console.log(`[API] Success: ${baseURL}${endpoint} (HTTP ${response.status})`);
         this.resolvedBaseURL = baseURL;
+        await Storage.saveApiBaseUrl(baseURL).catch(() => undefined);
         return response;
       } catch (error) {
-        console.warn(`API: Failed to reach ${baseURL}${endpoint}`, error);
+        console.warn(`[API] Failed to reach ${baseURL}${endpoint}`, error);
         lastError = error;
       } finally {
         clearTimeout(timeoutId);
       }
     }
+
+    console.error(`[API] All hosts exhausted. Last error:`, lastError);
 
     if (lastError instanceof Error) {
       throw lastError;
@@ -101,12 +118,36 @@ class ApiClient {
     throw new Error('Unable to reach the backend server.');
   }
 
+  private getPlatformBaseURLs(): string[] {
+    const lanBaseURL = this.baseURLs.find((url) => /192\.168\./.test(url));
+
+    if (Platform.OS === 'android') {
+      return [
+        'http://10.0.2.2:8000/api',
+        ...(lanBaseURL ? [lanBaseURL] : []),
+      ];
+    }
+
+    if (Platform.OS === 'ios') {
+      return [
+        'http://localhost:8000/api',
+        'http://127.0.0.1:8000/api',
+        ...(lanBaseURL ? [lanBaseURL] : []),
+      ];
+    }
+
+    return [
+      ...this.baseURLs,
+    ];
+  }
+
   // ========================================================================
   // AUTH ENDPOINTS
   // ========================================================================
 
   async registerStart(data: {
     name: string;
+    email?: string;
     phone: string;
     password: string;
     city?: string;

@@ -72,18 +72,10 @@ class RegistrationController extends Controller
     {
         $digits = preg_replace('/\D+/', '', $input);
 
-        if (strlen($digits) === 11 && str_starts_with($digits, '0')) {
-            $digits = substr($digits, 1);
-        }
-        if (strlen($digits) === 10) {
-            return '+91' . $digits;
-        }
-        if (strlen($digits) === 12 && str_starts_with($digits, '91')) {
-            return '+' . $digits;
-        }
-        if (str_starts_with($input, '+91') && strlen($digits) === 12) {
-            return '+91' . substr($digits, 2);
-        }
+        if (strlen($digits) === 10) return '+91' . $digits;
+        if (strlen($digits) === 11 && str_starts_with($digits, '0')) return '+91' . substr($digits, 1);
+        if (strlen($digits) === 12 && str_starts_with($digits, '91')) return '+' . $digits;
+
         return null;
     }
 

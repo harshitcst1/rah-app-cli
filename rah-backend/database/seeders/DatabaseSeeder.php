@@ -14,24 +14,10 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
-
-        User::updateOrCreate(
-            ['email' => 'user@example.com'],
-            [
-                'name' => 'Test User',
-                'password' => Hash::make('password'),
-                'is_admin' => false,
-            ]
-        );
-
-        User::updateOrCreate(
-            ['email' => 'admin@example.com'],
-            [
-                'name' => 'Admin User',
-                'password' => Hash::make('password'),
-                'is_admin' => true,
-            ]
-        );
+        // Seed the concrete demo accounts used by the app.
+        $this->call([
+            AdminUserSeeder::class,
+            TestUserSeeder::class,
+        ]);
     }
 }

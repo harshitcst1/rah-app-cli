@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Auth;
 use App\Models\User;
@@ -54,7 +55,7 @@ class LoginController extends Controller
         ]);
     }
 
-    // Step 1b: Resend OTP (simple version, no cooldown without extra columns)
+    // Step 1b: Resend OTP with rate limiting
     public function resend(Request $request, OtpService $otpService, ZenderWhatsappService $wa)
     {
         $data = $request->validate([
@@ -66,21 +67,47 @@ class LoginController extends Controller
             return response()->json(['ok' => false, 'error' => 'not_found'], 404);
         }
 
+        if ($pending->locked_until && now()->lt($pending->locked_until)) {
+            return response()->json(['ok' => false, 'error' => 'locked'], 423);
+        }
+
+        $cooldownSeconds = (int) env('OTP_RESEND_COOLDOWN_SECONDS', 60);
+        $maxSendsPerDay  = (int) env('OTP_MAX_SENDS_PER_DAY', 6);
+
+        if ($pending->sends_count >= $maxSendsPerDay) {
+            return response()->json([
+                'ok' => false, 'error' => 'sends_limit', 'limit' => $maxSendsPerDay
+            ], 429);
+        }
+
+        if ($pending->last_otp_sent_at && now()->diffInSeconds($pending->last_otp_sent_at) < $cooldownSeconds) {
+            $retryAfter = $cooldownSeconds - now()->diffInSeconds($pending->last_otp_sent_at);
+            return response()->json([
+                'ok' => false, 'error' => 'cooldown', 'retry_after' => $retryAfter
+            ], 429);
+        }
+
         $otp = $otpService->generate();
         $message = "Rah e Noor OTP: {$otp['code']}. Valid 7 min. Do not share.";
 
         $pending->otp_hash       = $otp['hash'];
         $pending->otp_expires_at = $otp['expires_at'];
         $pending->otp_attempts   = 0;
+        $pending->sends_count    = $pending->sends_count + 1;
+        $pending->last_otp_sent_at = now();
         $pending->save();
 
         $send = $wa->sendOtp($pending->phone_e164, $message);
+
+        $remaining = max(0, $maxSendsPerDay - $pending->sends_count);
 
         return response()->json([
             'ok' => true,
             'login_id' => $pending->id,
             'phone_masked' => $this->maskPhone($pending->phone_e164),
             'expires_at' => $otp['expires_at']->toIso8601String(),
+            'sends_count' => $pending->sends_count,
+            'remaining_sends' => $remaining,
             'dry_run' => $send['dry_run'] ?? false,
         ]);
     }
@@ -138,10 +165,11 @@ class LoginController extends Controller
     private function normalizeIndianPhone(string $input): ?string
     {
         $digits = preg_replace('/\D+/', '', $input);
+
         if (strlen($digits) === 10) return '+91' . $digits;
         if (strlen($digits) === 11 && str_starts_with($digits, '0')) return '+91' . substr($digits, 1);
         if (strlen($digits) === 12 && str_starts_with($digits, '91')) return '+' . $digits;
-        if (strlen($digits) === 13 && str_starts_with($digits, '91') && str_starts_with($input, '+')) return $input;
+
         return null;
     }
 
@@ -168,13 +196,17 @@ class LoginController extends Controller
             'password' => 'required|string',
         ]);
 
-        $phoneE164 = $this->normalizeIndianPhone($data['phone']);
-        if (!$phoneE164) {
-            return response()->json(['ok' => false, 'error' => 'invalid_phone'], 422);
+        $identifier = trim($data['phone']);
+        $phoneE164 = $this->normalizeIndianPhone($identifier);
+
+        $user = null;
+        if (filter_var($identifier, FILTER_VALIDATE_EMAIL)) {
+            $user = User::where('email', $identifier)->first();
+        } elseif ($phoneE164) {
+            $user = User::where('phone_e164', $phoneE164)->first();
         }
 
-        $user = User::where('phone_e164', $phoneE164)->first();
-        if (!$user || !\Illuminate\Support\Facades\Hash::check($data['password'], $user->password)) {
+        if (!$user || !Hash::check($data['password'], $user->password)) {
             return response()->json(['ok' => false, 'error' => 'invalid_credentials'], 401);
         }
 
@@ -187,7 +219,7 @@ class LoginController extends Controller
             'user' => [
                 'id' => $user->id,
                 'name' => $user->name,
-                'phone_masked' => $this->maskPhone($phoneE164),
+                'phone_masked' => $phoneE164 ? $this->maskPhone($phoneE164) : ($user->phone_e164 ? $this->maskPhone($user->phone_e164) : null),
                 'is_admin' => (bool) ($user->is_admin ?? false),
             ],
         ]);
