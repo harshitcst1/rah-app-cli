@@ -40,13 +40,13 @@ export function UserTabsNavigator() {
       }}
     >
       <Tabs.Screen
-          name="Dashboard"
-          component={DashboardScreen}
-          options={{
-            title: "Dashboard",
-            tabBarIcon: ({ color }) => (
-              <TabIcon icon="insert-chart" color={color} />
-            ),
+        name="Dashboard"
+        component={DashboardScreen}
+        options={{
+          title: "Dashboard",
+          tabBarIcon: ({ color, size }) => (
+            <TabIcon icon="insert-chart" color={color} size={size} />
+          ),
         }}
       />
       <Tabs.Screen
@@ -54,8 +54,8 @@ export function UserTabsNavigator() {
         component={LogScreen}
         options={{
           title: "Log",
-          tabBarIcon: ({ color }) => (
-            <TabIcon icon="edit" color={color} />
+          tabBarIcon: ({ color, size }) => (
+            <TabIcon icon="edit" color={color} size={size} />
           ),
         }}
       />
@@ -64,8 +64,8 @@ export function UserTabsNavigator() {
         component={LeaderboardScreen}
         options={{
           title: "Leaderboard",
-          tabBarIcon: ({ color }) => (
-            <TabIcon icon="emoji-events" color={color} />
+          tabBarIcon: ({ color, size }) => (
+            <TabIcon icon="emoji-events" color={color} size={size} />
           ),
         }}
       />
@@ -74,8 +74,8 @@ export function UserTabsNavigator() {
         component={ProfileScreen}
         options={{
           title: "Profile",
-          tabBarIcon: ({ color }) => (
-            <TabIcon icon="person" color={color} />
+          tabBarIcon: ({ color, size }) => (
+            <TabIcon icon="person" color={color} size={size} />
           ),
         }}
       />
@@ -83,10 +83,10 @@ export function UserTabsNavigator() {
   );
 }
 
-function TabIcon({ icon, color }: { icon: string; color: string }) {
+function TabIcon({ icon, color, size = 22 }: { icon: string; color: string; size?: number }) {
   return (
     <View style={styles.iconContainer}>
-      <Icon name={icon} size={22} color={color} />
+      <Icon name={icon} size={size} color={color} />
     </View>
   );
 }

@@ -13,6 +13,10 @@ import LoginScreen from "./app/auth/login";
 import RegisterScreen from "./app/auth/register";
 import { ThemeProvider, useTheme } from "./app/theme";
 import { UserTabsNavigator } from "./app/user/_layout";
+import Icon from 'react-native-vector-icons/MaterialIcons';
+
+// Ensure vector icon fonts are loaded (fixes missing icons on some platforms)
+Icon.loadFont && Icon.loadFont();
 
 enableScreens();
 

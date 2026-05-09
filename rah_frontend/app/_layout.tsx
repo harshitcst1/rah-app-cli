@@ -26,7 +26,7 @@ export function AppHeader() {
 
 const headerStyles = (colors: ThemeColors) => StyleSheet.create({
   header: {
-    paddingBottom: 12,
+    paddingBottom: 0,
     marginTop: 0,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
