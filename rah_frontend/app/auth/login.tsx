@@ -121,8 +121,8 @@ export default function Login() {
   };
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.container}>
+    <SafeAreaView style={styles.screen} edges={["left", "right", "bottom"]}>
+      <ScrollView contentInsetAdjustmentBehavior="never" contentContainerStyle={styles.container}>
         <View style={styles.card}>
           <View style={styles.header}>
             <Text style={styles.title}>Log In</Text>

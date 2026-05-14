@@ -194,7 +194,7 @@ export default function Leaderboard() {
   );
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <SafeAreaView style={styles.screen} edges={["left", "right", "bottom"]}>
       <KeyboardAvoidingView 
         style={{ flex: 1 }} 
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -204,6 +204,7 @@ export default function Leaderboard() {
           keyExtractor={(item, index) => `${item.rank}-${index}`}
           ListHeaderComponent={renderHeader}
           ListFooterComponent={renderFooter}
+          contentInsetAdjustmentBehavior="never"
           contentContainerStyle={styles.container}
           renderItem={({ item, index }) => (
             <View style={styles.listCardItem}>

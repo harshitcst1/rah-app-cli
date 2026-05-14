@@ -1,7 +1,8 @@
+/* eslint-disable react/no-unstable-nested-components */
 import { CommonActions, NavigationContainer, createNavigationContainerRef } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { enableScreens } from "react-native-screens";
@@ -68,6 +69,9 @@ function RootNavigator() {
   const screenOptions = useMemo(
     () => ({
       headerShown: true,
+      gestureEnabled: true,
+      fullScreenGestureEnabled: Platform.OS === "ios",
+      customAnimationOnGesture: Platform.OS === "ios",
       header: () => <AppHeader />,
       contentStyle: { backgroundColor: colors.bg },
     }),

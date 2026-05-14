@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Animated, View, Text, StyleSheet } from 'react-native';
-import { useTheme, type ThemeColors } from '../theme';
+import { useTheme } from '../theme';
 
 export interface ToastMessage {
   id: string;
@@ -19,8 +19,7 @@ export const showToast = (message: string, type: 'success' | 'error' | 'info' = 
 };
 
 export default function Toast() {
-  const { colors } = useTheme();
-  const styles = getStyles(colors);
+  const styles = getStyles();
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   useEffect(() => {
@@ -33,8 +32,6 @@ export default function Toast() {
 
       return () => clearTimeout(timeout);
     };
-
-    listeners.forEach(listener => {});
     listeners.add(handleToast);
     return () => {
       listeners.delete(handleToast);
@@ -44,13 +41,14 @@ export default function Toast() {
   return (
     <View style={styles.container}>
       {toasts.map((toast) => (
-        <ToastItem key={toast.id} toast={toast} styles={styles} colors={colors} />
+        <ToastItem key={toast.id} toast={toast} styles={styles} />
       ))}
     </View>
   );
 }
 
-function ToastItem({ toast, styles, colors }: { toast: ToastMessage; styles: any; colors: ThemeColors }) {
+function ToastItem({ toast, styles }: { toast: ToastMessage; styles: any }) {
+  const { colors } = useTheme();
   const [opacity] = useState(new Animated.Value(0));
 
   useEffect(() => {
@@ -67,7 +65,7 @@ function ToastItem({ toast, styles, colors }: { toast: ToastMessage; styles: any
         useNativeDriver: true,
       }),
     ]).start();
-  }, []);
+  }, [opacity, toast.duration]);
 
   const bgColor = toast.type === 'success' ? colors.green : toast.type === 'error' ? colors.danger : colors.greenTint;
   const textColor = toast.type === 'success' || toast.type === 'error' ? colors.onAccent : colors.text;
@@ -81,7 +79,7 @@ function ToastItem({ toast, styles, colors }: { toast: ToastMessage; styles: any
   );
 }
 
-const getStyles = (colors: ThemeColors) => StyleSheet.create({
+const getStyles = () => StyleSheet.create({
   container: {
     position: 'absolute',
     bottom: 20,

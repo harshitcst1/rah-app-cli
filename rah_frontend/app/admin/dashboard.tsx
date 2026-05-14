@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+/* eslint-disable react-native/no-inline-styles */
 import {
   ActivityIndicator,
   Alert,
@@ -114,7 +115,7 @@ export default function AdminDashboard() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [signOut]);
 
   useEffect(() => {
     loadData();
@@ -164,23 +165,7 @@ export default function AdminDashboard() {
   };
 
   const pickAnnouncementPhoto = async () => {
-    // Defensive: check if the imported helper is a function first.
-    let pickerFn: any = null;
-    if (typeof launchImageLibrary === 'function') {
-      pickerFn = launchImageLibrary as any;
-    } else {
-      try {
-        // Try a safe dynamic require; wrap in try/catch because some bundlers don't expose require.
-        // Avoid chaining into a null value.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const mod: any = (global as any)?.require ? (global as any).require('react-native-image-picker') : null;
-        if (mod) {
-          pickerFn = typeof mod.launchImageLibrary === 'function' ? mod.launchImageLibrary : typeof mod.default?.launchImageLibrary === 'function' ? mod.default.launchImageLibrary : null;
-        }
-      } catch (e) {
-        pickerFn = null;
-      }
-    }
+    const pickerFn = typeof launchImageLibrary === 'function' ? launchImageLibrary : null;
 
     if (!pickerFn) {
       Alert.alert(
@@ -191,16 +176,21 @@ export default function AdminDashboard() {
     }
 
     try {
-      const result = await pickerFn({ mediaType: 'photo', selectionLimit: 1 });
+      const result = await pickerFn({ mediaType: 'photo', selectionLimit: 1, includeBase64: true });
       if (!result || result.didCancel || result.errorCode || !result.assets?.[0]) return;
 
       const asset = result.assets[0];
       if (!asset?.uri) return;
 
+      // Prefer a data URI when available (helps with iOS `ph://` URIs).
+      const name = asset.fileName || `announcement-${Date.now()}.jpg`;
+      const type = asset.type || 'image/jpeg';
+      const uri = asset.base64 ? `data:${type};base64,${asset.base64}` : asset.uri;
+
       setAnnouncementPhoto({
-        uri: asset.uri,
-        name: asset.fileName || `announcement-${Date.now()}.jpg`,
-        type: asset.type || 'image/jpeg',
+        uri,
+        name,
+        type,
       });
     } catch (err: any) {
       console.warn('pickAnnouncementPhoto error', err);
@@ -222,6 +212,7 @@ export default function AdminDashboard() {
 
     setAnnouncementSaving(true);
     try {
+      console.log('Uploading announcement', { announcementSubject, announcementPhoto });
       await api.createAdminAnnouncement({
         subject: announcementSubject.trim(),
         description: announcementDescription.trim(),
@@ -272,7 +263,7 @@ export default function AdminDashboard() {
           name: typeName.trim(),
           short_desc: typeDesc.trim() || undefined,
           active: typeActive,
-          sort_order: parseInt(typeOrder) || 0,
+          sort_order: parseInt(typeOrder, 10) || 0,
           content_text: typeText || undefined,
         });
       } else {
@@ -280,7 +271,7 @@ export default function AdminDashboard() {
           name: typeName.trim(),
           short_desc: typeDesc.trim() || undefined,
           active: typeActive,
-          sort_order: parseInt(typeOrder) || 0,
+          sort_order: parseInt(typeOrder, 10) || 0,
           content_text: typeText || undefined,
         });
       }
@@ -295,7 +286,7 @@ export default function AdminDashboard() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.screen}>
+      <SafeAreaView style={styles.screen} edges={["left", "right", "bottom"]}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.green} />
           <Text style={styles.loadingText}>Loading admin data...</Text>
@@ -305,8 +296,9 @@ export default function AdminDashboard() {
   }
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <SafeAreaView style={styles.screen} edges={["left", "right", "bottom"]}>
       <ScrollView 
+        contentInsetAdjustmentBehavior="never"
         contentContainerStyle={styles.container}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />

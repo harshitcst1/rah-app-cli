@@ -7,7 +7,6 @@ import {
   TextInput,
   TouchableOpacity,
   Switch,
-  Alert,
   Modal,
   ActivityIndicator,
   Image,
@@ -16,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { CommonActions, useNavigation } from "@react-navigation/native";
 import { launchImageLibrary } from "react-native-image-picker";
 import { useTheme, type ThemeColors } from "../theme";
+import Icon from 'react-native-vector-icons/MaterialIcons';
 import { api as apiClient } from "../services/api";
 import { Storage } from "../utils/storage";
 import { useAuth } from "../context/auth";
@@ -194,7 +194,7 @@ export default function Profile() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.screen}>
+      <SafeAreaView style={styles.screen} edges={["left", "right", "bottom"]}>
         <View style={styles.loadingWrap}>
           <ActivityIndicator size="large" color={colors.green} />
         </View>
@@ -203,8 +203,8 @@ export default function Profile() {
   }
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.container}>
+    <SafeAreaView style={styles.screen} edges={["left", "right", "bottom"]}>
+      <ScrollView contentInsetAdjustmentBehavior="never" contentContainerStyle={styles.container}>
         <View style={styles.header}>
           <View style={styles.avatarWrapper}>
             {profileImageUri ? (
@@ -241,9 +241,17 @@ export default function Profile() {
                   style={[styles.themeBtn, mode === m && styles.themeBtnActive]}
                   onPress={() => setMode(m)}
                 >
-                  <Text style={styles.themeBtnIcon}>
-                    {m === "system" ? "⚙️" : m === "light" ? "☀️" : "🌙"}
-                  </Text>
+                  <View style={styles.themeBtnIcon}>
+ <Icon 
+    name={
+      m === "system" ? "settings" : 
+      m === "light" ? "wb-sunny" : "nights-stay"
+    } 
+    size={20} 
+    color={mode === m ? colors.green : colors.textMuted} 
+  />
+  
+</View>
                   <Text style={[styles.themeBtnLabel, mode === m && styles.themeBtnLabelActive]}>
                     {m.charAt(0).toUpperCase() + m.slice(1)}
                   </Text>

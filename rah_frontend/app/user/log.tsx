@@ -45,6 +45,22 @@ export default function Log() {
     loadTypes();
   }, []);
 
+  // Safe haptic/vibration helper: prefer `react-native-haptic-feedback` when
+  // available (better on modern iPhones), otherwise fall back to Vibration API.
+  function triggerHaptic() {
+    try {
+      // Use dynamic require so the app still runs if the optional lib isn't installed
+       
+      const haptic = require('react-native-haptic-feedback');
+      const impl = haptic && (haptic.default || haptic);
+      impl && impl.trigger && impl.trigger('impactLight');
+    } catch (err) {
+      // If the optional native lib is not available, fall back to Vibration
+      console.warn('haptic helper error', err);
+      Vibration.vibrate();
+    }
+  }
+
   async function loadTypes() {
     setLoadingTypes(true);
     try {
@@ -127,8 +143,8 @@ export default function Log() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.container}>
+    <SafeAreaView style={styles.screen} edges={["left", "right", "bottom"]}>
+      <ScrollView contentInsetAdjustmentBehavior="never" contentContainerStyle={styles.container}>
         <View style={styles.card}>
           <Text style={styles.title}>Select the Darood</Text>
           <Text style={styles.subtitle}>Choose what you are reciting now.</Text>
@@ -190,7 +206,7 @@ export default function Log() {
             <TouchableOpacity
               style={styles.tapButton}
               onPress={() => {
-                Vibration.vibrate(10);
+                triggerHaptic();
                 adjustCount(count + 1);
               }}
             >

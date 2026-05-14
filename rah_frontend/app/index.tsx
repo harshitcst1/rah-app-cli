@@ -48,11 +48,12 @@ export default function Index() {
         },
         container: {
           paddingHorizontal: 18,
+          paddingTop: 10,
           paddingBottom: 32,
         },
         hero: {
-          paddingTop: 26,
-          paddingBottom: 12,
+          paddingTop: 0,
+          paddingBottom: 4,
         },
         heroPill: {
           alignSelf: "flex-start",
@@ -78,20 +79,20 @@ export default function Index() {
           textTransform: "uppercase",
         },
         heroTitle: {
-          marginTop: 18,
+          marginTop: 4,
           color: colors.greenDeep,
           fontSize: 30,
           lineHeight: 36,
           fontWeight: "800",
         },
         heroBody: {
-          marginTop: 12,
+          marginTop: 6,
           color: colors.textSecondary,
           fontSize: 16,
           lineHeight: 24,
         },
         heroActions: {
-          marginTop: 16,
+          marginTop: 8,
           gap: 12,
         },
         button: {
@@ -131,7 +132,7 @@ export default function Index() {
           letterSpacing: 0.5,
         },
         countdownCard: {
-          marginTop: 18,
+          marginTop: 6,
           backgroundColor: colors.card,
           borderRadius: 14,
           borderWidth: 1,
@@ -254,7 +255,7 @@ export default function Index() {
   );
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <SafeAreaView style={styles.screen} edges={["left", "right", "bottom"]}>
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.hero}>
           <View style={styles.heroPill}>

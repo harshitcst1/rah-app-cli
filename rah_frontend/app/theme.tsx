@@ -85,7 +85,8 @@ const ThemeContext = createContext<ThemeContextType>({
 /* ── Provider ──────────────────────────────────────────────── */
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const systemScheme = useColorScheme();
-  const [mode, setMode] = useState<ThemeMode>("system");
+  // Default to light mode so the app opens in light theme by default.
+  const [mode, setMode] = useState<ThemeMode>("light");
 
   const isDark = mode === "system" ? systemScheme === "dark" : mode === "dark";
   const colors = isDark ? dark : light;

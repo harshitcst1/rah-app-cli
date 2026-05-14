@@ -272,8 +272,9 @@ export default function UserDashboard() {
   }, [isFocused, loadData]);
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <SafeAreaView style={styles.screen} edges={["left", "right", "bottom"]}>
       <ScrollView 
+        contentInsetAdjustmentBehavior="never"
         contentContainerStyle={styles.container}
         refreshControl={
           <RefreshControl 

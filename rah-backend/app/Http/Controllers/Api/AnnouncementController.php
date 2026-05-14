@@ -28,11 +28,18 @@ class AnnouncementController extends Controller
                     ->where('user_id', $u->id)
                     ->exists();
 
+                // Build a photo URL using the current request host so devices can reach the image
+                $photoUrl = null;
+                if ($announcement->photo_path) {
+                    $host = request()?->getSchemeAndHttpHost() ?: rtrim(config('app.url'), '/');
+                    $photoUrl = $host . '/storage/' . $announcement->photo_path;
+                }
+
                 return [
                     'id' => (int) $announcement->id,
                     'subject' => (string) $announcement->subject,
                     'description' => (string) $announcement->description,
-                    'photo_url' => $announcement->photo_path ? asset('storage/' . $announcement->photo_path) : null,
+                    'photo_url' => $photoUrl,
                     'is_read' => $isRead,
                     'published_at' => optional($announcement->published_at ?? $announcement->created_at)?->toIso8601String(),
                 ];

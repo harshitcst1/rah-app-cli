@@ -120,19 +120,20 @@ class ApiClient {
 
   private getPlatformBaseURLs(): string[] {
     const lanBaseURL = this.baseURLs.find((url) => /192\.168\./.test(url));
-
+    // Prefer LAN URL first for physical devices so they attempt the reachable
+    // host before trying localhost (which refers to the device itself).
     if (Platform.OS === 'android') {
       return [
-        'http://10.0.2.2:8000/api',
         ...(lanBaseURL ? [lanBaseURL] : []),
+        'http://10.0.2.2:8000/api',
       ];
     }
 
     if (Platform.OS === 'ios') {
       return [
+        ...(lanBaseURL ? [lanBaseURL] : []),
         'http://localhost:8000/api',
         'http://127.0.0.1:8000/api',
-        ...(lanBaseURL ? [lanBaseURL] : []),
       ];
     }
 
@@ -240,8 +241,23 @@ class ApiClient {
   }
 
   async logout() {
+    const token = await Storage.getToken();
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+    };
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
     try {
-      await this.request('/logout', { method: 'POST' });
+      const response = await this.fetchWithFallback('/logout', { method: 'POST' }, headers);
+      if (!response.ok && response.status !== 401) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || errorData.message || 'Logout failed');
+      }
+    } catch (error: any) {
+      // Logout should always clear local auth state even if backend token is expired.
+      console.warn('Logout request failed; clearing local auth anyway.', error?.message || error);
     } finally {
       await Storage.clearAuth();
     }
@@ -500,8 +516,24 @@ class ApiClient {
     const formData = new FormData();
     formData.append('subject', data.subject);
     formData.append('description', data.description);
+
     if (data.photo) {
-      formData.append('photo', data.photo as any);
+      const { uri, name, type } = data.photo;
+
+      // On iOS, picker URIs can be `ph://...`; base64 data URI is more reliable there.
+      // Send base64 separately so backend can decode and persist it.
+      if (typeof uri === 'string' && uri.startsWith('data:')) {
+        formData.append('photo_base64', uri);
+        formData.append('photo_name', name);
+        formData.append('photo_mime', type);
+      } else {
+        // Normal file URI (file:// or content://) upload
+        formData.append('photo', {
+          uri,
+          name,
+          type,
+        } as any);
+      }
     }
 
     return this.request<{ ok: boolean; item: any }>('/admin/announcements', {

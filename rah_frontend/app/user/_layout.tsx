@@ -1,5 +1,6 @@
+/* eslint-disable react/no-unstable-nested-components */
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import DashboardScreen from "./dashboard";
 import LogScreen from "./log";
 import LeaderboardScreen from "./leaderboard";
